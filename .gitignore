@@ -5,7 +5,7 @@ node_modules/
 workspace/
 
 # Environment variables
-.env
+# .env
 
 # Test caches
 __tests__/soak/.model-cache/
