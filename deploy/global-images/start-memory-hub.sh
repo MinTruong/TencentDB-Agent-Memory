@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# 单独拉起 memory-hub（panel + knowledge 合并镜像，端口 8125 + 8424）。
+# Khởi động riêng memory-hub (image gộp panel + knowledge, cổng 8125 + 8424).
 #
-# 依赖：memory 需要先起来（memory-hub 里 knowledge 调 memory 做 embed/RAG）。
-# 如果 memory 容器不存在，此脚本会打 warn 但仍继续（LLM_MODE=proxy 时 memory-hub
-# 自身可以启动，只是 knowledge 首次调 memory 时会失败）。
+# Phụ thuộc: memory cần chạy trước (knowledge trong memory-hub gọi memory để embed/RAG).
+# Nếu container memory chưa tồn tại, script này sẽ warn nhưng vẫn tiếp tục (khi LLM_MODE=proxy
+# memory-hub tự khởi động được, chỉ là knowledge gọi memory lần đầu sẽ fail).
 #
-# 用法：
+# Cách dùng:
 #   ./start-memory-hub.sh
 #
-# 需要以下 LLM 参数（写在 .env）：
+# Cần các tham số LLM sau (ghi trong .env):
 #   MEMORY_LLM_BASE_URL / MEMORY_LLM_API_KEY / MEMORY_LLM_MODEL
 
 set -euo pipefail
@@ -22,20 +22,21 @@ require_vars \
   MEMORY_LLM_BASE_URL MEMORY_LLM_API_KEY MEMORY_LLM_MODEL \
   KNOWLEDGE_PUBLIC_BASE_URL
 
-# 与 memory-core 保持一致的 gateway 内部凭据（默认 local，仅本地体验）
+# Thông tin quản trị gateway khớp với memory-core (mặc định local, chỉ dùng trải nghiệm local)
 MEMORY_CORE_GATEWAY_API_KEY="${MEMORY_CORE_GATEWAY_API_KEY:-local}"
 
-# Panel UI "客户端接入地址"卡片显示的 base URL（供 CodeBuddy / ClaudeCode 拷贝使用）。
-# 开源本地部署 core 和 proxy 分开跑，客户端要接的是 proxy，不是 core/gateway。
+# Base URL hiển thị trong thẻ "Địa chỉ kết nối client" của Panel UI (để CodeBuddy / ClaudeCode copy).
+# Deploy local open source core và proxy chạy riêng, client cần kết nối tới proxy, không phải core/gateway.
 #
-# 默认按下面顺序探测宿主机对外可达地址：
-#   1) Linux 上 `hostname -I` 首个非 127 的 IPv4（LAN IP）
-#   2) macOS 上常见网卡（en0 / en1）的 IPv4
-#   3) 前两步都失败 → localhost（仅同机使用，跨机需要用户显式设 MEMORY_HUB_PROXY_PUBLIC_URL）
+# Mặc định dò địa chỉ host có thể truy cập từ bên ngoài theo thứ tự:
+#   1) trên Linux `hostname -I` IPv4 đầu tiên khác 127 (LAN IP)
+#   2) trên macOS các card mạng thường gặp (en0 / en1) IPv4
+#   3) cả hai bước trên fail → localhost (chỉ dùng được trên cùng máy; dùng khác máy cần người dùng
+#      đặt tường minh MEMORY_HUB_PROXY_PUBLIC_URL)
 #
-# 显式设了 MEMORY_HUB_PROXY_PUBLIC_URL 环境变量则完全按你给的值来。
-# 显式设为空字符串则 Panel 前端回落到 gateway_endpoint（老行为）。
-# Panel 后端 → Kernel 的转发地址始终走 REMOTE_INSTANCE_URL，不受此变量影响。
+# Nếu đã đặt biến env MEMORY_HUB_PROXY_PUBLIC_URL thì hoàn toàn theo giá trị bạn cho.
+# Đặt tường minh là chuỗi rỗng thì frontend Panel về hành vi cũ là fallback về gateway_endpoint.
+# Địa chỉ Panel backend → Kernel chuyển tiếp luôn đi theo REMOTE_INSTANCE_URL, không bị ảnh hưởng bởi biến này.
 detect_host_ip() {
   local ip=""
   # Linux
@@ -50,7 +51,7 @@ detect_host_ip() {
       [[ -n "$ip" ]] && { echo "$ip"; return; }
     done
   fi
-  # 兜底：ip route（Linux 无 hostname -I 时）
+  # Phương án dự phòng: ip route (khi Linux không có hostname -I)
   if command -v ip >/dev/null 2>&1; then
     ip=$(ip -4 route get 1 2>/dev/null | awk '/src/ {for (i=1;i<=NF;i++) if ($i=="src") print $(i+1); exit}')
     [[ -n "$ip" ]] && { echo "$ip"; return; }
@@ -59,33 +60,33 @@ detect_host_ip() {
 }
 
 if [[ -z "${MEMORY_HUB_PROXY_PUBLIC_URL+x}" ]]; then
-  # 未设 → 用探测出的 IP + PROXY_PORT 拼默认值
+  # Chưa đặt → dùng IP dò được + PROXY_PORT ghép giá trị mặc định
   _host_ip=$(detect_host_ip)
   MEMORY_HUB_PROXY_PUBLIC_URL="http://${_host_ip}:${PROXY_PORT:-8096}"
-  info "自动探测宿主机地址: MEMORY_HUB_PROXY_PUBLIC_URL=$MEMORY_HUB_PROXY_PUBLIC_URL"
-  info "  (如需覆盖，在 .env 里显式设 MEMORY_HUB_PROXY_PUBLIC_URL=http://<your-ip>:${PROXY_PORT:-8096})"
+  info "Tự dò địa chỉ host: MEMORY_HUB_PROXY_PUBLIC_URL=$MEMORY_HUB_PROXY_PUBLIC_URL"
+  info "  (muốn ghi đè, đặt tường minh MEMORY_HUB_PROXY_PUBLIC_URL=http://<your-ip>:${PROXY_PORT:-8096} trong .env)"
 fi
 
 CONTAINER=tdai-memory-hub
 NETWORK=tdai-memory-stack
 
 if ! $DOCKER network inspect "$NETWORK" >/dev/null 2>&1; then
-  info "创建 docker 网络 $NETWORK"
+  info "Tạo docker network $NETWORK"
   $DOCKER network create "$NETWORK" >/dev/null
 fi
 
-# memory 未起来时给提醒，不阻塞
+# Nhắc nhở khi memory chưa chạy, không chặn
 if ! $DOCKER ps --format '{{.Names}}' 2>/dev/null | grep -qx "tdai-memory-core"; then
-  warn "memory-core 容器未运行。memory-hub 能启动，但 knowledge 调 memory 时会失败。"
-  warn "建议先 ./start-memory-core.sh 再来这里，或直接 ./start-all.sh"
+  warn "container memory-core chưa chạy. memory-hub vẫn khởi động được, nhưng knowledge gọi memory sẽ fail."
+  warn "Đề nghị chạy ./start-memory-core.sh trước rồi quay lại đây, hoặc chạy trực tiếp ./start-all.sh"
 fi
 
 pull_image "$MEMORY_HUB_IMAGE"
 rm_container_if_exists "$CONTAINER"
 
-# 内部 knowledge 通过 upstream memory 调 LLM 走 custom 模式，直接指向 MEMORY_LLM_*
-# LLM_MODE=custom → 不走 memory 的 LLM proxy，而是 knowledge 直连用户提供的端点
-info "启动 memory-hub (image=$MEMORY_HUB_IMAGE, panel=$PANEL_PORT knowledge=$KNOWLEDGE_PORT)"
+# Knowledge bên trong gọi LLM qua upstream memory theo custom mode, trỏ thẳng tới MEMORY_LLM_*
+# LLM_MODE=custom → không đi qua LLM proxy của memory, mà knowledge nối thẳng tới endpoint người dùng cấp
+info "Khởi động memory-hub (image=$MEMORY_HUB_IMAGE, panel=$PANEL_PORT knowledge=$KNOWLEDGE_PORT)"
 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias memory-hub \
@@ -110,6 +111,6 @@ $DOCKER run -d --name "$CONTAINER" \
   "$MEMORY_HUB_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 120
-ok "memory-hub 已启动"
+ok "memory-hub đã khởi động"
 ok "  Panel UI  → http://localhost:${PANEL_PORT}/"
 ok "  KS Health → http://localhost:${KNOWLEDGE_PORT}/health"

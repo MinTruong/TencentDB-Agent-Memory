@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# 单独拉起 proxy（context-proxy，端口 8096）。
+# Khởi động riêng proxy (context-proxy, cổng 8096).
 #
-# proxy 的转发上游走 PROXY_UPSTREAM_URL（与 memory 组的 MEMORY_LLM_* 独立）。
-# proxy 会调 memory:8420 做鉴权 / skill / tdai memory 注入；调 memory-hub:8125
-# 做 sessionInit control plane。可以单跑 proxy 但相关能力会降级 / 关闭。
+# Upstream chuyển tiếp của proxy đi theo PROXY_UPSTREAM_URL (độc lập với MEMORY_LLM_* của nhóm memory).
+# Proxy gọi memory:8420 để làm auth / skill / tdai memory inject; gọi memory-hub:8125
+# làm control plane sessionInit. Có thể chạy proxy riêng nhưng các khả năng tương ứng sẽ bị giảm/tắt.
 #
-# 用法：
+# Cách dùng:
 #   ./start-proxy.sh
 #
-# 需要以下 proxy 组参数（写在 .env）：
+# Cần các tham số nhóm proxy sau (ghi trong .env):
 #   PROXY_UPSTREAM_URL / PROXY_UPSTREAM_API_KEY / PROXY_UPSTREAM_MODEL
 
 set -euo pipefail
@@ -21,41 +21,41 @@ require_vars \
   PROXY_IMAGE PROXY_PORT \
   PROXY_UPSTREAM_URL PROXY_UPSTREAM_API_KEY PROXY_UPSTREAM_MODEL
 
-# 与 memory-core 保持一致的 gateway 内部凭据（默认 local，仅本地体验）
+# Thông tin quản trị gateway khớp với memory-core (mặc định local, chỉ dùng trải nghiệm local)
 MEMORY_CORE_GATEWAY_API_KEY="${MEMORY_CORE_GATEWAY_API_KEY:-local}"
 
 CONTAINER=tdai-proxy
 NETWORK=tdai-memory-stack
 
 if ! $DOCKER network inspect "$NETWORK" >/dev/null 2>&1; then
-  info "创建 docker 网络 $NETWORK"
+  info "Tạo docker network $NETWORK"
   $DOCKER network create "$NETWORK" >/dev/null
 fi
 
-# 依赖检查（不阻塞，仅提醒）
+# Kiểm tra phụ thuộc (không chặn, chỉ nhắc)
 if ! $DOCKER ps --format '{{.Names}}' 2>/dev/null | grep -qx "tdai-memory-core"; then
-  warn "memory-core 容器未运行，proxy 的 auth / tdai memory / skill 注入将全部降级。"
+  warn "container memory-core chưa chạy, auth / tdai memory / skill inject của proxy sẽ đều bị giảm."
 fi
 if ! $DOCKER ps --format '{{.Names}}' 2>/dev/null | grep -qx "tdai-memory-hub"; then
-  warn "memory-hub 容器未运行，proxy 的 sessionInit control plane 不可达。"
+  warn "container memory-hub chưa chạy, control plane sessionInit của proxy không tới được."
 fi
 
 pull_image "$PROXY_IMAGE"
 rm_container_if_exists "$CONTAINER"
 
-# proxy 只从 YAML 读上游 URL / API key（不认 PROXY_UPSTREAM_URL 环境变量），
-# 所以我们从 .env 生成一个最小 config.yaml 挂到容器 /data/config.yaml。
-# 容器 CMD 已经是 [--config /data/config.yaml]。
+# Proxy chỉ đọc upstream URL / API key từ YAML (không nhận biến env PROXY_UPSTREAM_URL),
+# nên ta từ .env sinh ra một config.yaml tối thiểu mount vào container /data/config.yaml.
+# CMD của container đã là [--config /data/config.yaml].
 CONFIG_DIR="${PROXY_CONFIG_DIR:-$SCRIPT_DIR/.proxy-config}"
 mkdir -p "$CONFIG_DIR"
 CONFIG_FILE="$CONFIG_DIR/config.yaml"
 
-# ── 三大能力开关（默认最小可用；打开时自动串联依赖）──
-# PROXY_ENABLE_AUTH        : 客户端凭 x-tdai-user-key 走内核 auth/verify → user_id
-# PROXY_ENABLE_SESSION_INIT: 首轮弹表单选 team/agent/task；依赖 auth+tdai
-# PROXY_ENABLE_TDAI        : L2/L3 记忆注入 + L1 召回；依赖 memory-core
+# ── Ba công tắc khả năng (mặc định tối thiểu dùng được; bật sẽ tự nối các phụ thuộc) ──
+# PROXY_ENABLE_AUTH        : client dùng x-tdai-user-key đi kernel auth/verify → user_id
+# PROXY_ENABLE_SESSION_INIT: lượt đầu hiện form chọn team/agent/task; phụ thuộc auth+tdai
+# PROXY_ENABLE_TDAI        : inject L2/L3 memory + recall L1; phụ thuộc memory-core
 #
-# 便捷开关 PROXY_FULL_STACK=1 一键把三个都开。
+# Công tắc tiện lợi PROXY_FULL_STACK=1 mở cả ba chỉ với một lệnh.
 if [[ "${PROXY_FULL_STACK:-0}" == "1" ]]; then
   PROXY_ENABLE_AUTH=1
   PROXY_ENABLE_TDAI=1
@@ -65,17 +65,17 @@ PROXY_ENABLE_AUTH="${PROXY_ENABLE_AUTH:-0}"
 PROXY_ENABLE_TDAI="${PROXY_ENABLE_TDAI:-0}"
 PROXY_ENABLE_SESSION_INIT="${PROXY_ENABLE_SESSION_INIT:-0}"
 
-# sessionInit 依赖 auth 拿 user_id；开 sessionInit 时自动补 auth
+# sessionInit phụ thuộc auth để lấy user_id; bật sessionInit thì tự bật thêm auth
 if [[ "$PROXY_ENABLE_SESSION_INIT" == "1" && "$PROXY_ENABLE_AUTH" != "1" ]]; then
-  warn "PROXY_ENABLE_SESSION_INIT=1 需要 auth；自动打开 PROXY_ENABLE_AUTH"
+  warn "PROXY_ENABLE_SESSION_INIT=1 cần auth; tự động bật PROXY_ENABLE_AUTH"
   PROXY_ENABLE_AUTH=1
 fi
 
 bool() { [[ "$1" == "1" ]] && echo "true" || echo "false"; }
 
-info "生成 proxy config → $CONFIG_FILE  (auth=$(bool $PROXY_ENABLE_AUTH) session-init=$(bool $PROXY_ENABLE_SESSION_INIT) tdai=$(bool $PROXY_ENABLE_TDAI))"
+info "Sinh proxy config → $CONFIG_FILE  (auth=$(bool $PROXY_ENABLE_AUTH) session-init=$(bool $PROXY_ENABLE_SESSION_INIT) tdai=$(bool $PROXY_ENABLE_TDAI))"
 cat > "$CONFIG_FILE" <<YAML
-# 由 start-proxy.sh 自动生成 —— 每次启动覆盖，请不要手动改。
+# Do start-proxy.sh tự sinh —— bị ghi đè mỗi lần khởi động, đừng sửa tay.
 server:
   host: 0.0.0.0
   port: 8096
@@ -90,7 +90,7 @@ log:
   level: info
   backend: console
 
-# tdai 内核对接（用于 injection / skill / auth 拉取）
+# Kết nối kernel tdai (dùng cho injection / skill / auth)
 tdai:
   enabled: $(bool $PROXY_ENABLE_TDAI)
   endpoint: "http://memory-core:8420"
@@ -127,8 +127,8 @@ sessionInit:
 costGuard:
   enabled: false
 
-# 打开 skill + knowledge + tdai-memory 三个注入器；
-# knowledge 依赖 memory-hub 起来，否则 hook 内部会降级为空块。
+# Bật ba injector skill + knowledge + tdai-memory;
+# knowledge phụ thuộc memory-hub đã chạy, nếu không hook bên trong sẽ giảm thành khối rỗng.
 injection:
   enabled: true
   injectors:
@@ -140,7 +140,7 @@ redis:
   enabled: false
 YAML
 
-info "启动 proxy (image=$PROXY_IMAGE, port=$PROXY_PORT)"
+info "Khởi động proxy (image=$PROXY_IMAGE, port=$PROXY_PORT)"
 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias proxy \
@@ -150,5 +150,5 @@ $DOCKER run -d --name "$CONTAINER" \
   "$PROXY_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 90
-ok "proxy 已启动 → http://localhost:${PROXY_PORT}/"
-ok "  用法：把 coding agent 的 API base 指向 http://localhost:${PROXY_PORT}"
+ok "proxy đã khởi động → http://localhost:${PROXY_PORT}/"
+ok "  Cách dùng: trỏ API base của coding agent tới http://localhost:${PROXY_PORT}"

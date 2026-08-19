@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 单独拉起 memory-core（内核 gateway，端口 8420），首次启动自动 init-admin +
-# 把生成的 user_key 持久化到 .admin-key 供 proxy / claude-code 使用。
+# Khởi động riêng memory-core (kernel gateway, cổng 8420), lần đầu tự động init-admin +
+# lưu user_key sinh ra vào .admin-key để proxy / claude-code dùng.
 #
-# 用法：
+# Cách dùng:
 #   ./start-memory-core.sh
 #
-# 数据持久化到 named volume（默认 tdai-memory-core-data，可在 .env 改 MEMORY_CORE_VOLUME）。
-# 重复执行会先移除旧容器再启新的，volume 数据保留 —— admin user_key 也随之保留。
+# Dữ liệu lưu vào named volume (mặc định tdai-memory-core-data, có thể đổi MEMORY_CORE_VOLUME trong .env).
+# Chạy lại sẽ xóa container cũ rồi khởi động mới, dữ liệu volume giữ lại —— admin user_key cũng giữ lại.
 
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,44 +16,44 @@ source "$SCRIPT_DIR/_lib.sh"
 load_env
 require_vars MEMORY_CORE_IMAGE MEMORY_CORE_PORT MEMORY_CORE_VOLUME
 
-# ── Gateway 内部管理凭据 ─────────────────────────────────────────
-# 用 ${VAR-default}（不是 :-default）：允许 .env 里显式设为空字符串来关闭 Bearer gate。
+# ── Thông tin quản trị nội bộ Gateway ────────────────────────────
+# Dùng ${VAR-default} (không phải :-default): cho phép trong .env đặt chuỗi rỗng để tắt Bearer gate.
 #
-# 当前 memory-core 的 Bearer gate 与 proxy auth 存在**已知不兼容**：proxy 调
-# /v3/meta/auth/verify 时不带 Bearer（源码遗漏，见 MemoryProxy/src/auth.ts），
-# 所以 proxy 启用 auth 时必须把 MEMORY_CORE_GATEWAY_API_KEY 留空。默认已置空。
+# Hiện tại Bearer gate của memory-core và auth của proxy có **xung đột đã biết**: proxy gọi
+# /v3/meta/auth/verify không kèm Bearer (thiếu ở source, xem MemoryProxy/src/auth.ts),
+# nên khi proxy bật auth thì bắt buộc để trống MEMORY_CORE_GATEWAY_API_KEY. Mặc định đã để trống.
 MEMORY_CORE_GATEWAY_API_KEY="${MEMORY_CORE_GATEWAY_API_KEY-}"
 MEMORY_CORE_ADMIN_USERNAME="${MEMORY_CORE_ADMIN_USERNAME:-admin}"
 
-# admin user_key 持久化位置（宿主机侧；volume 数据被清后需一并删掉此文件）
+# Vị trí lưu user_key admin (phía host; sau khi xóa dữ liệu volume cần xóa luôn file này)
 ADMIN_KEY_FILE="${MEMORY_CORE_ADMIN_KEY_FILE:-$SCRIPT_DIR/.admin-key}"
 
 if [[ -n "$MEMORY_CORE_GATEWAY_API_KEY" ]]; then
-  warn "MEMORY_CORE_GATEWAY_API_KEY 非空 —— proxy 的 sessionInit/auth 目前会因缺 Bearer 而失败。"
-  warn "本地体验请把 .env 里的 MEMORY_CORE_GATEWAY_API_KEY 留空。"
+  warn "MEMORY_CORE_GATEWAY_API_KEY không rỗng —— sessionInit/auth của proxy hiện sẽ fail vì thiếu Bearer."
+  warn "Để trải nghiệm local, hãy để trống MEMORY_CORE_GATEWAY_API_KEY trong .env."
 fi
 
 CONTAINER=tdai-memory-core
 NETWORK=tdai-memory-stack
 
-# 创建共享网络（幂等）
+# Tạo network dùng chung (idempotent)
 if ! $DOCKER network inspect "$NETWORK" >/dev/null 2>&1; then
-  info "创建 docker 网络 $NETWORK"
+  info "Tạo docker network $NETWORK"
   $DOCKER network create "$NETWORK" >/dev/null
 fi
 
 pull_image "$MEMORY_CORE_IMAGE"
 rm_container_if_exists "$CONTAINER"
 
-# ── 生成 gateway config.yaml，挂到容器 /data/config/tdai-gateway.yaml ──
-# 默认镜像里没 config，memory-core 走编译时的默认（skill / knowledge 模块关闭）。
-# 从 .env 里的 MEMORY_LLM_* 生成一份 standalone+skill 的最小配置。
+# ── Sinh gateway config.yaml, mount vào container /data/config/tdai-gateway.yaml ──
+# Image mặc định không có config, memory-core dùng mặc định lúc biên dịch (skill / knowledge module tắt).
+# Từ MEMORY_LLM_* trong .env sinh ra một config tối thiểu standalone+skill.
 CORE_CONFIG_DIR="${MEMORY_CORE_CONFIG_DIR:-$SCRIPT_DIR/.memory-core-config}"
 mkdir -p "$CORE_CONFIG_DIR"
 CORE_CONFIG_FILE="$CORE_CONFIG_DIR/tdai-gateway.yaml"
-info "生成 gateway config → $CORE_CONFIG_FILE"
+info "Sinh gateway config → $CORE_CONFIG_FILE"
 cat > "$CORE_CONFIG_FILE" <<YAML
-# 由 start-memory-core.sh 自动生成 —— 每次启动覆盖，请不要手动改。
+# Do start-memory-core.sh tự sinh —— bị ghi đè mỗi lần khởi động, đừng sửa tay.
 deployMode: standalone
 stateBackend: local
 
@@ -72,9 +72,9 @@ llm:
   timeoutMs: 300000
 
 memory:
-  # promptMode: chat（默认，通用聊天/教学场景）| code（代码工程场景，
-  # LLM 会重点抽"改了什么/发现什么问题/工具用法"，普通聊天可能抽出 0 条）
-  # 通过 .env 里 MEMORY_PROMPT_MODE 覆盖。
+  # promptMode: chat (mặc định, kịch bản chat/giảng dạy thông thường) | code (kịch bản dự án code,
+  # LLM sẽ ưu tiên trích "đã sửa gì/phát hiện vấn đề gì/cách dùng tool", chat thường có thể trích ra 0 dòng)
+  # Ghi đè bằng MEMORY_PROMPT_MODE trong .env.
   promptMode: ${MEMORY_PROMPT_MODE:-chat}
   capture: { enabled: true }
   extraction:
@@ -101,7 +101,7 @@ memory:
   embedding:
     provider: none
 
-# ── Skill 模块 ──
+# ── Module Skill ──
 skill:
   enabled: true
   routing:
@@ -121,7 +121,7 @@ skill:
     maxResourceSizeBytes: 5000000
 YAML
 
-info "启动 memory-core (image=$MEMORY_CORE_IMAGE, port=$MEMORY_CORE_PORT)"
+info "Khởi động memory-core (image=$MEMORY_CORE_IMAGE, port=$MEMORY_CORE_PORT)"
 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias memory-core \
@@ -135,26 +135,26 @@ $DOCKER run -d --name "$CONTAINER" \
   "$MEMORY_CORE_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 90
-ok "memory-core 已启动 → http://localhost:${MEMORY_CORE_PORT}/"
+ok "memory-core đã khởi động → http://localhost:${MEMORY_CORE_PORT}/"
 
-# ── Admin user 生命周期 ─────────────────────────────────────────
-# 首次启动：init-admin 时**传入我们生成的随机 user_key**，返回体里读回来存文件。
-# 重启且已初始化（409）：优先读 .admin-key；若 volume 是新造的但 .admin-key 是
-#   旧的，无法恢复（volume/key 必须同步；提示用户清理）。
+# ── Vòng đời admin user ──────────────────────────────────────────
+# Lần đầu: init-admin **truyền user_key ngẫu nhiên do ta sinh**, đọc lại từ response rồi lưu file.
+# Khởi động lại mà đã init rồi (409): ưu tiên đọc .admin-key; nếu volume mới tạo nhưng .admin-key
+#   là cũ thì không khôi phục được (volume/key phải đồng bộ; nhắc người dùng dọn dẹp).
 #
-# init-admin 接口尊重传入的 user_key（见 MemoryCore/src/metadata/store/sqlite-adapter.ts
-# defaultKeyValue = input.default_key_value ?? generateUserKey()）；只要 volume 空、
-# 我们传固定 key，就能拿到自己指定的 key。首次启动时脚本生成一把 32 字节随机
-# base32url —— 每台机器/每次 purge 都是独立 key，不会撞车。
+# Endpoint init-admin tôn trọng user_key truyền vào (xem MemoryCore/src/metadata/store/sqlite-adapter.ts
+# defaultKeyValue = input.default_key_value ?? generateUserKey()); chỉ cần volume rỗng
+# và ta truyền key cố định là lấy được key ta chỉ định. Lần đầu script sinh một key 32 byte
+# base32url ngẫu nhiên —— mỗi máy/mỗi lần purge đều là key độc lập, không trùng nhau.
 
 generate_user_key() {
-  # sk-mem-<32 chars A-Za-z0-9>，与 metadata/utils/user-key.ts 的格式一致
-  # 用 openssl（可移植；tr 过滤 base64 里的 +/= 到 32 位）
+  # sk-mem-<32 chars A-Za-z0-9>, khớp định dạng metadata/utils/user-key.ts
+  # Dùng openssl (di động được; tr lọc bỏ +/= trong base64 còn 32 ký tự)
   local raw
   if command -v openssl >/dev/null 2>&1; then
     raw=$(openssl rand -base64 48 | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)
   else
-    # 兜底：读足够多的 urandom 保证过滤后 >=32
+    # Phương án dự phòng: đọc đủ urandom để sau khi lọc vẫn >=32
     raw=$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c 32)
   fi
   echo "sk-mem-${raw}"
@@ -172,12 +172,12 @@ verify_user_key() {
   [[ "$code" == "200" ]]
 }
 
-info "初始化 admin user（username=${MEMORY_CORE_ADMIN_USERNAME}, key 持久化 → $ADMIN_KEY_FILE）..."
+info "Khởi tạo admin user (username=${MEMORY_CORE_ADMIN_USERNAME}, key lưu → $ADMIN_KEY_FILE)..."
 
-# 生成随机 key（首次 init-admin 用；若之前有 file 就复用）
+# Sinh key ngẫu nhiên (dùng lần đầu init-admin; nếu đã có file thì dùng lại)
 if [[ -s "$ADMIN_KEY_FILE" ]]; then
   ADMIN_KEY=$(cat "$ADMIN_KEY_FILE")
-  info "  复用已保存的 admin key（.admin-key 已存在）"
+  info "  Dùng lại admin key đã lưu (.admin-key đã tồn tại)"
 else
   ADMIN_KEY=$(generate_user_key)
 fi
@@ -193,37 +193,37 @@ init_resp=$(/usr/bin/curl -sS -o /tmp/init-admin.$$ -w "%{http_code}" \
 
 case "$init_resp" in
   200)
-    ok "admin user 已创建"
-    # 落盘 key（把宿主机 file 的权限收紧）
+    ok "admin user đã được tạo"
+    # Ghi key xuống đĩa (thắt chặt quyền file trên host)
     umask 077
     echo -n "$ADMIN_KEY" > "$ADMIN_KEY_FILE"
-    ok "  admin user_key 已保存到 $ADMIN_KEY_FILE"
+    ok "  admin user_key đã lưu vào $ADMIN_KEY_FILE"
     ;;
   409)
     if [[ -s "$ADMIN_KEY_FILE" ]]; then
-      ok "admin user 已存在（跳过 init-admin，用 $ADMIN_KEY_FILE 里的 key）"
+      ok "admin user đã tồn tại (bỏ qua init-admin, dùng key trong $ADMIN_KEY_FILE)"
     else
-      warn "admin user 已存在，但 $ADMIN_KEY_FILE 缺失，无法恢复 user_key。"
-      warn "选项 A: 清理 volume 重建 —— ./stop-all.sh --purge && ./start-memory-core.sh"
-      warn "选项 B: 手动创建新 admin user_key（需要旧 key 或 gateway apiKey）"
+      warn "admin user đã tồn tại, nhưng thiếu $ADMIN_KEY_FILE nên không khôi phục được user_key."
+      warn "Phương án A: dọn volume rồi dựng lại —— ./stop-all.sh --purge && ./start-memory-core.sh"
+      warn "Phương án B: tự tạo admin user_key mới (cần key cũ hoặc gateway apiKey)"
     fi
     ;;
   *)
-    warn "init-admin 返回 HTTP=${init_resp}，可能需要手动排查："
+    warn "init-admin trả về HTTP=${init_resp}, có thể cần tự kiểm tra thêm:"
     cat /tmp/init-admin.$$ 2>/dev/null; echo
     ;;
 esac
 rm -f /tmp/init-admin.$$
 
-# ── 校验 admin key 可用 ─────────────────────────────────────────
+# ── Kiểm tra admin key khả dụng ─────────────────────────────────
 if [[ -s "$ADMIN_KEY_FILE" ]]; then
   ADMIN_KEY=$(cat "$ADMIN_KEY_FILE")
   if verify_user_key "$ADMIN_KEY"; then
-    # 只在末尾做脱敏输出：整串路径 masked，让终端历史里不留全值
+    # Chỉ in đầu cuối để che bớt: mask cả chuỗi, không để giá trị đầy đủ trong lịch sử terminal
     masked="${ADMIN_KEY:0:11}****${ADMIN_KEY: -4}"
-    ok "admin user_key 校验通过（auth/verify 200）—— $masked"
+    ok "admin user_key kiểm tra qua (auth/verify 200) —— $masked"
     ok "  key file: $ADMIN_KEY_FILE"
   else
-    warn "admin user_key 校验失败（auth/verify 非 200）。检查 $ADMIN_KEY_FILE 与 volume 是否匹配。"
+    warn "admin user_key kiểm tra thất bại (auth/verify khác 200). Kiểm tra $ADMIN_KEY_FILE với volume có khớp không."
   fi
 fi
