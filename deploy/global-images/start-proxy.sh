@@ -17,9 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_lib.sh"
 
 load_env
-require_vars \
-  PROXY_IMAGE PROXY_PORT \
-  PROXY_UPSTREAM_URL PROXY_UPSTREAM_API_KEY PROXY_UPSTREAM_MODEL
+require_vars   PROXY_IMAGE PROXY_PORT   PROXY_UPSTREAM_URL PROXY_UPSTREAM_API_KEY PROXY_UPSTREAM_MODEL
 
 # Thông tin quản trị gateway khớp với memory-core (mặc định local, chỉ dùng trải nghiệm local)
 MEMORY_CORE_GATEWAY_API_KEY="${MEMORY_CORE_GATEWAY_API_KEY:-local}"
@@ -66,7 +64,7 @@ PROXY_ENABLE_TDAI="${PROXY_ENABLE_TDAI:-0}"
 PROXY_ENABLE_SESSION_INIT="${PROXY_ENABLE_SESSION_INIT:-0}"
 
 # sessionInit phụ thuộc auth để lấy user_id; bật sessionInit thì tự bật thêm auth
-if [[ "$PROXY_ENABLE_SESSION_INIT" == "1" && "$PROXY_ENABLE_AUTH" != "1" ]]; then
+if [[ "$PROXY_ENABLE_SESSION_INIT" == "1" && -z "${PROXY_ENABLE_AUTH:-}" ]]; then
   warn "PROXY_ENABLE_SESSION_INIT=1 cần auth; tự động bật PROXY_ENABLE_AUTH"
   PROXY_ENABLE_AUTH=1
 fi
@@ -117,6 +115,11 @@ sessionInit:
   maxRetries: 3
   injectAgentContext: true
   injectTaskContext: true
+  debugForceIdentity:
+    teamId: "n0y6th4d"
+    agentId: "uj03icd8"
+    taskId: "default-task"
+  debugForceUserId: "minhth"
   headerAutoSelect:
     enabled: true
     teamHeader: "x-team-id"
@@ -125,7 +128,7 @@ sessionInit:
     onMismatch: "form"
 
 costGuard:
-  enabled: false
+  enabled: true
 
 # Bật ba injector skill + knowledge + tdai-memory;
 # knowledge phụ thuộc memory-hub đã chạy, nếu không hook bên trong sẽ giảm thành khối rỗng.
@@ -137,18 +140,12 @@ injection:
     - tdai-memory
 
 redis:
-  enabled: false
+  enabled: true
 YAML
 
 info "Khởi động proxy (image=$PROXY_IMAGE, port=$PROXY_PORT)"
-$DOCKER run -d --name "$CONTAINER" \
-  --network "$NETWORK" \
-  --network-alias proxy \
-  --add-host=host.docker.internal:host-gateway \
-  -p "${PROXY_PORT}:8096" \
-  -v "$CONFIG_FILE:/data/config.yaml:ro" \
-  "$PROXY_IMAGE" >/dev/null
+$DOCKER run -d --name "$CONTAINER"   --network "$NETWORK"   --network-alias proxy   --add-host=host.docker.internal:host-gateway   -p "${PROXY_PORT}:8096"   -v "$CONFIG_FILE:/data/config.yaml:ro"   "$PROXY_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 90
 ok "proxy đã khởi động → http://localhost:${PROXY_PORT}/"
-ok "  Cách dùng: trỏ API base của coding agent tới http://localhost:${PROXY_PORT}"
+ok "  Cách dùng: trỏ API base của coding agent tới http://localhost:${PROXY_PORT}/"
