@@ -69,7 +69,7 @@ export function isAuthEnabled(): boolean {
  */
 export async function verifyUserKey(userKey: string, serviceId: string): Promise<VerifyUserResult> {
   if (!config) return { userId: "", rejected: false };
-  if (!serviceId) return { userId: "", rejected: true, rejectReason: "missing service_id (spaceId not in request path)" };
+  if (!serviceId) { serviceId = "default"; }
   if (!userKey) return { userId: "", rejected: true, rejectReason: "missing user_key" };
 
   try {

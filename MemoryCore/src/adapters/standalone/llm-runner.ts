@@ -29,6 +29,29 @@ import type {
   Logger,
 } from "../../core/types.js";
 import type { LLMUsage } from "../../core/report/metric-tracking-runner.js";
+/**
+ * Strip reasoning content (e.g., <think>...</think> tags, or plain text reasoning)
+ * from LLM response before JSON parsing.
+ */
+function stripReasoning(text: string): string {
+  // Remove <think>...</think> blocks
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/g, '');
+  // Remove any trailing "reasoning_content" style text (if not wrapped in tags)
+  // Some models inject reasoning as plain text before the JSON.
+  // We look for the first '{' or '[' and keep from there, if the text contains JSON.
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  let jsonStart = -1;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    jsonStart = firstBrace;
+  } else if (firstBracket !== -1) {
+    jsonStart = firstBracket;
+  }
+  if (jsonStart > 0) {
+    cleaned = cleaned.substring(jsonStart);
+  }
+  return cleaned.trim();
+}
 
 const TAG = "[memory-tdai] [standalone-runner]";
 
@@ -337,7 +360,8 @@ export class StandaloneLLMRunner implements LLMRunner {
         },
       });
 
-      const text = (result.text ?? "").trim();
+const rawText = (result.text ?? "").trim();
+const text = stripReasoning(rawText);
       const totalMs = Date.now() - runStartMs;
 
       // 暴露 token usage 到 side-channel（供 MetricTrackingRunner 读取）
@@ -465,3 +489,4 @@ export class StandaloneLLMRunnerFactory implements LLMRunnerFactory {
     });
   }
 }
+

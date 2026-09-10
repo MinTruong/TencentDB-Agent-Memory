@@ -533,7 +533,7 @@ export async function handleAnthropicMessages(
   // parsing or the alias-gate. `earlyVerify.userId` is reused later for
   // both the systemUser short-circuit and the normal pipeline.
   const earlyApiKey = extractApiKey(c);
-  const earlySpaceId = extractSpaceIdFromPath(c.req.path) ?? "";
+  const earlySpaceId = extractSpaceIdFromPath(c.req.path) ?? c.req.header("x-tdai-service-id") ?? "";
   const earlyVerify = await verifyUserKey(earlyApiKey, earlySpaceId);
   if (earlyVerify.rejected) {
     return c.json({ type: "error", error: { type: "authentication_error", message: `Authentication failed: ${earlyVerify.rejectReason ?? "unknown"}` } }, 401);

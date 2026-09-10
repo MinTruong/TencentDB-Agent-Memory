@@ -955,20 +955,6 @@ export class TdaiGateway {
 
         v2Deps.resolveStorage = (instanceId: string) => this.resolveStorageForInstance(instanceId);
 
-        // Pipeline notify: trigger async L1 extraction when v2 /conversation/add writes L0
-        if (this.statefulPipelineManager) {
-          const pipelineManager = this.statefulPipelineManager;
-          v2Deps.notifyPipeline = async (
-            instanceId: string,
-            sessionId: string,
-            rounds: number,
-            teamId?: string,
-            agentId?: string,
-          ) => {
-            await pipelineManager.notifyConversation(sessionId, [], instanceId, rounds, teamId, agentId);
-          };
-        }
-
         // Inject QuotaManager for memory/credit limit checks
         if (this.quotaManager) {
           v2Deps.quotaManager = this.quotaManager;
@@ -995,6 +981,22 @@ export class TdaiGateway {
             ? await this.ensureConversationAddForInstance(instanceId)
             : await this.ensureConversationAddForStandalone(instanceId);
           return wired;
+        };
+      }
+
+      // Pipeline notify: trigger async L1 extraction when v2 /conversation/add writes L0.
+      // Always wired (standalone + service): statefulPipelineManager is initialized in
+      // both modes, so standalone L0 writes now trigger L1 extraction via the worker.
+      if (this.statefulPipelineManager) {
+        const pipelineManager = this.statefulPipelineManager;
+        v2Deps.notifyPipeline = async (
+          instanceId: string,
+          sessionId: string,
+          rounds: number,
+          teamId?: string,
+          agentId?: string,
+        ) => {
+          await pipelineManager.notifyConversation(sessionId, [], instanceId, rounds, teamId, agentId);
         };
       }
 
