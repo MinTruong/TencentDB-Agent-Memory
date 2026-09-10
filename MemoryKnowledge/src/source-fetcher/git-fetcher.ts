@@ -55,11 +55,11 @@ export class GitSourceFetcher implements ISourceFetcher {
   }
 
   validate(sourceUrl: string): void {
-    // 第一版：仅支持 public HTTPS 仓库（SSH / 私有仓库鉴权见文档 005）。
-    if (!sourceUrl.startsWith("https://")) {
-      throw new Error(
-        "first version only supports public HTTPS repos; SSH/private repo support coming soon",
-      );
+    // Allow HTTPS and SSH (git@host:path.git) URLs
+    const isHttps = sourceUrl.startsWith("https://");
+    const isSsh = /^git@[^:]+:[^\s]+\.git$/.test(sourceUrl);
+    if (!isHttps && !isSsh) {
+      throw new Error("repo_url must be a valid HTTPS or SSH Git URL (e.g., https://... or git@host:path.git)");
     }
     const host = this.extractHost(sourceUrl);
     if (!host) {
@@ -107,9 +107,15 @@ export class GitSourceFetcher implements ISourceFetcher {
   }
 
   private extractHost(url: string): string {
+    // Try parsing as HTTPS URL first
     try {
       return new URL(url).hostname;
     } catch {
+      // Not a standard URL; check if it's SSH format (git@host:path)
+      const sshMatch = url.match(/^git@([^:]+):/);
+      if (sshMatch) {
+        return sshMatch[1];
+      }
       return "";
     }
   }

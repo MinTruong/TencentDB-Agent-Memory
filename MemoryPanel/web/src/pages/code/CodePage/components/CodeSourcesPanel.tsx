@@ -433,10 +433,9 @@ export default function CodeSourcesPanel() {
       {showRegister &&
         (() => {
           const trimmedRepo = formRepo.trim();
-          const isSsh = trimmedRepo.startsWith('git@');
           const validUrl = isValidGitHttpUrl(trimmedRepo);
-          // 已输入内容、非 SSH、但又不是合法 http(s) 地址 → 提示格式错误。
-          const showUrlError = !!trimmedRepo && !isSsh && !validUrl;
+          // 非空且格式无效 → 提示格式错误（HTTPS 或 SSH）
+          const showUrlError = !!trimmedRepo && !validUrl;
           return (
             <Modal
               visible
@@ -452,14 +451,9 @@ export default function CodeSourcesPanel() {
                       size="full"
                       value={formRepo}
                       onChange={setFormRepo}
-                      placeholder="https://gitlab.example.com/namespace/repo.git"
+                      placeholder="https://gitlab.com/namespace/repo.git or git@gitlab.com:namespace/repo.git"
                     />
                   </Form.Item>
-                  {isSsh && (
-                    <Form.Item>
-                      <Alert type="warning">{t('code.register.sshWarning')}</Alert>
-                    </Form.Item>
-                  )}
                   {showUrlError && (
                     <Form.Item>
                       <Alert type="error">{t('code.register.invalidUrl')}</Alert>

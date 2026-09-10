@@ -86,6 +86,11 @@ rm_container_if_exists "$CONTAINER"
 
 # Knowledge bên trong gọi LLM qua upstream memory theo custom mode, trỏ thẳng tới MEMORY_LLM_*
 # LLM_MODE=custom → không đi qua LLM proxy của memory, mà knowledge nối thẳng tới endpoint người dùng cấp
+#
+# SSH key mount: để Git clone được repo private qua SSH.
+#   - Mount vào /home/node/.ssh (user `node` là user chạy service bên trong image).
+#   - KHÔNG mount known_hosts (read-only sẽ khiến ssh không ghi được → warning mỗi lần clone);
+#     thay vào đó trỏ UserKnownHostsFile vào file ghi được trong /home/node/.ssh.
 info "Khởi động memory-hub (image=$MEMORY_HUB_IMAGE, panel=$PANEL_PORT knowledge=$KNOWLEDGE_PORT)"
 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
@@ -94,6 +99,8 @@ $DOCKER run -d --name "$CONTAINER" \
   -p "${PANEL_PORT}:8125" \
   -p "${KNOWLEDGE_PORT}:8424" \
   -v "${PANEL_VOLUME}:/data/knowledge" \
+  -v "$HOME/.ssh/id_rsa:/home/node/.ssh/id_rsa:ro" \
+  -e GIT_SSH_COMMAND="ssh -i /home/node/.ssh/id_rsa -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/home/node/.ssh/known_hosts" \
   -e PANEL_PORT=8125 \
   -e KNOWLEDGE_PORT=8424 \
   -e KNOWLEDGE_PUBLIC_BASE_URL="$KNOWLEDGE_PUBLIC_BASE_URL" \
@@ -108,12 +115,26 @@ $DOCKER run -d --name "$CONTAINER" \
   -e LLM_BASE_URL="$MEMORY_LLM_BASE_URL" \
   -e LLM_MODEL="$MEMORY_LLM_MODEL" \
   -e KNOWLEDGE_LLM_BINDING_SYNC=0 \
-  -v "$HOME/.ssh/id_rsa:/root/.ssh/id_rsa:ro" \
-  -v "$HOME/.ssh/known_hosts:/root/.ssh/known_hosts:ro" \
-  -e GIT_SSH_COMMAND="ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=accept-new" \
   "$MEMORY_HUB_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 120
+
+# ── Hậu cấu hình trong container ─────────────────────────────────────────────
+# 1) openssh-client: image gốc không có binary `ssh`, nên Git không clone được qua SSH.
+docker exec "$CONTAINER" apt-get update -qq >/dev/null 2>&1 || true
+docker exec "$CONTAINER" apt-get install -y openssh-client -qq >/dev/null 2>&1 || true
+
+# 2) Git rewrite HTTPS → SSH.
+#    Cho phép nhập URL dạng https://gitlab.com/... trên Panel UI nhưng Git sẽ clone
+#    bằng SSH key đã mount. Đặt ở /etc/gitconfig (system level) để áp dụng cho MỌI
+#    user/HOME trong container — kể cả process chạy bằng root mà không có HOME riêng.
+docker exec "$CONTAINER" sh -c 'cat > /etc/gitconfig <<EOF
+[url "git@gitlab.com:"]
+	insteadOf = https://gitlab.com/
+[url "git@gitlab.com:"]
+	insteadOf = http://gitlab.com/
+EOF' || true
+
 ok "memory-hub đã khởi động"
 ok "  Panel UI  → http://localhost:${PANEL_PORT}/"
 ok "  KS Health → http://localhost:${KNOWLEDGE_PORT}/health"
