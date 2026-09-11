@@ -122,7 +122,11 @@ skill:
 YAML
 
 info "Khởi động memory-core (image=$MEMORY_CORE_IMAGE, port=$MEMORY_CORE_PORT)"
+# --restart unless-stopped: Docker daemon đã enabled nên container tự lên lại sau khi
+# server reboot. Dùng "unless-stopped" (không phải "always") để tôn trọng ý định dừng
+# thủ công — container bị `docker stop` sẽ không tự khởi động lại ở lần boot kế tiếp.
 $DOCKER run -d --name "$CONTAINER" \
+  --restart unless-stopped \
   --network "$NETWORK" \
   --network-alias memory-core \
   -p "${MEMORY_CORE_PORT}:8420" \

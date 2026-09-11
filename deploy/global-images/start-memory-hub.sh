@@ -92,7 +92,11 @@ rm_container_if_exists "$CONTAINER"
 #   - KHÔNG mount known_hosts (read-only sẽ khiến ssh không ghi được → warning mỗi lần clone);
 #     thay vào đó trỏ UserKnownHostsFile vào file ghi được trong /home/node/.ssh.
 info "Khởi động memory-hub (image=$MEMORY_HUB_IMAGE, panel=$PANEL_PORT knowledge=$KNOWLEDGE_PORT)"
+# --restart unless-stopped: tự lên lại sau reboot (xem chú thích trong start-memory-core.sh).
+# Lưu ý: restart chỉ chạy lại container cũ, KHÔNG chạy lại script này — nên openssh-client
+# và /etc/gitconfig (cài bên dưới) vẫn còn nguyên vì nằm trong layer của container.
 $DOCKER run -d --name "$CONTAINER" \
+  --restart unless-stopped \
   --network "$NETWORK" \
   --network-alias memory-hub \
   --add-host=host.docker.internal:host-gateway \

@@ -144,7 +144,8 @@ redis:
 YAML
 
 info "Khởi động proxy (image=$PROXY_IMAGE, port=$PROXY_PORT)"
-$DOCKER run -d --name "$CONTAINER"   --network "$NETWORK"   --network-alias proxy   --add-host=host.docker.internal:host-gateway   -p "${PROXY_PORT}:8096"   -v "$CONFIG_FILE:/data/config.yaml:ro"   "$PROXY_IMAGE" >/dev/null
+# --restart unless-stopped: tự lên lại sau reboot (xem chú thích trong start-memory-core.sh).
+$DOCKER run -d --name "$CONTAINER"   --restart unless-stopped   --network "$NETWORK"   --network-alias proxy   --add-host=host.docker.internal:host-gateway   -p "${PROXY_PORT}:8096"   -v "$CONFIG_FILE:/data/config.yaml:ro"   "$PROXY_IMAGE" >/dev/null
 
 wait_healthy "$CONTAINER" 90
 ok "proxy đã khởi động → http://localhost:${PROXY_PORT}/"

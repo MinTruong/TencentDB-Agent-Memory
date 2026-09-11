@@ -1,0 +1,10 @@
+# Shell script BẮT BUỘC dùng LF.
+#
+# Lý do: repo được phát triển trên Windows (core.autocrlf=true). Khi scp script
+# sang server Linux, CRLF làm bash báo lỗi kiểu:
+#   syntax error near unexpected token `$'{\r''
+#   syntax error: unexpected end of file
+# Đã gặp thực tế với start-memory-core.sh và start-proxy.sh (2026-09-11).
+#
+# Rule hẹp cho *.sh — KHÔNG dùng `* text=auto` để tránh renormalize toàn repo.
+*.sh text eol=lf
